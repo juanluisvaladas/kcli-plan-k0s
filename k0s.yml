@@ -1,0 +1,135 @@
+parameters:
+  # Controller parameters
+  image_controller: fedora37
+  memory_controller: 2048
+  numcpus_controller: 2
+  controllers: 1
+  controllerworker: true
+  # Worker paramers
+  image_worker: fedora37
+  memory_worker: 1024
+  numcpus_worker: 1
+  workers: 1
+  # 
+  install: true
+  domain: k0s.lab
+  k0s_path: go/src/github.com/k0sproject/k0s/k0s
+  k0sctl_path: go/src/github.com/k0sproject/k0sctl/k0sctl
+  scp_user:
+  scp_address: 192.168.122.1
+
+{% if controllers > 1 %}
+lb0:
+  type: loadbalancer
+  ports:
+  - 6443
+  reservedns: true
+  domain: {{ domain }}
+  vms:
+{% for controller in range(0, controllers) %}
+  - controller-{{ controller}}
+{% endfor %}
+{% endif %}
+
+{% for controller in range(0, controllers) %}
+controller-{{ controller }}:
+  image: {{ image_controller }}
+  memory: {{ memory_controller }}
+  numcpus: {{ numcpus_controller }}
+  reservedns: true
+  domain: {{ domain }}
+# Only do the installation bit on controller-0
+{% if controller == 0 %}
+  privatekey: true
+  files:
+    - path: /opt/fetchk0s.sh
+      mode: "700"
+      content: | 
+        #!/bin/sh
+        scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no {{ scp_user }}@{{ scp_address }}:{{ k0s_path }} /opt
+        scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no {{ scp_user }}@{{ scp_address }}:{{ k0sctl_path }} /opt
+    - path: /opt/waitconnectivity.sh
+      mode: "700"
+      content: |
+        #!/bin/bash
+
+        # test-conn assumes that there will be always connectivity within 100 seconds to any machine.
+        # This is fairly fragile but given the scope it's probably solid enough.
+        # If machines takes over 100 seconds to be available this could fail.
+        test-conn(){
+          HOST=$1
+          for i in {1..100}; do
+            ping -c 1 $HOST && return 0
+            sleep 1
+          done
+        }
+        # Wait for controllers
+        {% for i in range(0, controllers) %}
+        test-conn controller-{{ i }}.{{ domain }}
+        {% endfor %}
+        # Wait for workers
+        {% for i in range(0, workers) %}
+        test-conn worker-{{ i }}.{{ domain }}
+        {% endfor %}
+        {% if controllers > 1 %}
+        # Wait for lb
+        test-conn lb0.{{ domain }}
+        {% endif %}
+    - path: /opt/installk0s.sh
+      mode: "700"
+      content: |
+        #!/bin/sh
+        sed -i  "s/REPLACE_VERSION/$(/opt/k0s version)/" /root/k0sctl.yaml
+        # k0sctl needs the HOME environment variable defined.
+        export HOME=/root
+        /opt/k0sctl apply --config /root/k0sctl.yaml
+    - path: /root/k0sctl.yaml
+      content: |
+        apiVersion: k0sctl.k0sproject.io/v1beta1
+        kind: Cluster
+        metadata:
+          name: k0s-cluster
+        spec:
+          hosts:
+{% for i in range(0, controllers) %}
+{% if controllerworker %}
+          - role: controller+worker
+{% else %}
+          - role: controller
+{% endif %}
+            ssh:
+              address: controller-{{ i }}.{{ domain }}
+              user: root
+              keyPath: ~/.ssh/id_rsa
+            k0sBinaryPath: /opt/k0s
+            uploadBinary: true
+{% endfor %}
+{% for i in range(0, workers) %}
+          - role: worker
+            ssh:
+              address: worker-{{ i }}.{{ domain }}
+              user: root
+              keyPath: ~/.ssh/id_rsa
+            k0sBinaryPath: /opt/k0s
+            uploadBinary: true
+{% endfor %}
+          k0s: 
+            version: REPLACE_VERSION
+{% if install %}
+  cmds:
+    - /opt/waitconnectivity.sh
+    # run after waitconnectivity so that installk0s.sh has is some extra margin right after ping
+    - /opt/fetchk0s.sh
+    - /opt/installk0s.sh
+{% endif %}
+{% endif %} # endif controller-0
+{% endfor %}
+
+{% for worker in range(0, workers) %}
+worker-{{ worker }}:
+  image: {{ image_worker }}
+  memory: {{ memory_worker }}
+  numcpus: {{ numcpus_worker }}
+  reservedns: true
+  domain: {{ domain }}
+{% endfor %}
