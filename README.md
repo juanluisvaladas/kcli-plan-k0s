@@ -5,8 +5,11 @@ Kcli allows to create VMs, among other things, in libvirt. By defining plans you
 full fledged clusters in a single command.
 
 This has three advantages over running loads on AWS:
+
 1- It doesn't involve additional costs
+
 2- Given that you have appropriate hardware, it's faster to deploy it this way.
+
 3- It's very unlikely that you forget running instances.
 
 ## Security considerations
@@ -41,7 +44,7 @@ kcli create plan -P scp_user=${USER} -P workers=0 -f k0s.yml all-in-one
 ### Custom parameters
 
 The plan ships sane defaults, but if you need to do some customization such custom cpu number, you
-can use the -P flag. For instance to change the memory use -P memory=8192. Every plan has its parameters
+can use the `-P` flag. For instance to change the memory use `-P memory=8192`. Every plan has its parameters
 defined in the plan definiton in the section `.paramters`. For instance to launch an all in one cluster
 with custom memory allocation you would run:
 
