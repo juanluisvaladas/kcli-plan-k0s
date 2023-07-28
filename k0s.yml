@@ -17,6 +17,8 @@ parameters:
   k0sctl_path: go/src/github.com/k0sproject/k0sctl/k0sctl
   scp_user:
   scp_address: 192.168.122.1
+  # cluster config
+  cni_provider: kuberouter
 
 {% for controller in range(0, controllers)|reverse %}
 controller-{{ controller }}:
@@ -98,10 +100,11 @@ controller-{{ controller }}:
 {% endfor %}
           k0s: 
             version: REPLACE_VERSION
-{% if controllers > 1 %}
             config:
               spec:
                 network:
+                  provider: {{ cni_provider }}
+{% if controllers > 1 %}
                   nodeLocalLoadBalancing:
                     enabled: true
 {% endif %}
