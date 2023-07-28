@@ -18,20 +18,7 @@ parameters:
   scp_user:
   scp_address: 192.168.122.1
 
-{% if controllers > 1 %}
-lb0:
-  type: loadbalancer
-  ports:
-  - 6443
-  reservedns: true
-  domain: {{ domain }}
-  vms:
-{% for controller in range(0, controllers) %}
-  - controller-{{ controller}}
-{% endfor %}
-{% endif %}
-
-{% for controller in range(0, controllers) %}
+{% for controller in range(0, controllers)|reverse %}
 controller-{{ controller }}:
   image: {{ image_controller }}
   memory: {{ memory_controller }}
@@ -71,10 +58,6 @@ controller-{{ controller }}:
         {% for i in range(0, workers) %}
         test-conn worker-{{ i }}.{{ domain }}
         {% endfor %}
-        {% if controllers > 1 %}
-        # Wait for lb
-        test-conn lb0.{{ domain }}
-        {% endif %}
     - path: /opt/installk0s.sh
       mode: "700"
       content: |
@@ -115,6 +98,13 @@ controller-{{ controller }}:
 {% endfor %}
           k0s: 
             version: REPLACE_VERSION
+{% if controllers > 1 %}
+            config:
+              spec:
+                network:
+                  nodeLocalLoadBalancing:
+                    enabled: true
+{% endif %}
 {% if install %}
   cmds:
     - /opt/waitconnectivity.sh
